@@ -1,0 +1,730 @@
+---
+title: "E-Commerce Sales Analysis"
+subtitle: "A case study using R and the Tidyverse"
+author: "Dee Weinacht"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    theme: readable
+    highlighter: pygments
+    code_folding: hide
+---
+
+<BR>
+
+## Executive Summary
+
+An analysis of the sales data discovered an ongoing problem with profitability. The average profit margin for sales over the past 4 years has been only 12.5%. Profit margins have been negatively impacted by products being overly discounted, with an average discount of 15% and as high as 80% on some products. To improve profitability discounts should reduced or eliminated and any discounts offered being kept below 20%.
+
+<BR>
+
+## Introduction
+
+The following is an analysis of an e-commerce office supply retailer's sales data. It includes cleaning and preparing the data, conducting an analysis, and providing insights and recommendations based on the data.
+
+This e-commerce retailer has been experiencing continuous growth over the past 4 years. They have accumulated sales records throughout this period, but have not analyzed this data for deeper insights. They would like a data analysis performed to gain deeper insight into how the business is performing and areas for improvement. Specifically the stakeholders would like to know:
+
+1.  What are our sales trends? How is the business performing over time?
+2.  What are best and worst performing areas of business? Should we pivot into or out of particular areas?
+3.  Does the data indicate any problem areas for sales? Are there aspects of the business that would benefit from a deeper analysis?
+
+### This Document
+
+This document walks through the entire process of the analysis. First the data is loaded and examined then data cleaning and pre-processing is completed. Then the cleaned data is analyzed using statistical and visual approaches. Finally the insights gained are summarized and recommendations are provided.
+
+The document may be navigates using the table of contents on the left.
+
+To improve clarity and focus on the analysis code snippets are hidden by default, but can be viewed using the "Show" buttons to the right.
+
+<BR>
+
+## Setup
+
+Document setup:
+
+```{r Markdown Setup}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+Load necessary R packages:
+
+```{r Load Packages}
+library(tidyverse)
+library(viridis)
+library(gt)
+```
+
+<BR>
+
+## Data Preparation
+
+### Loading data
+
+Load e-commerce sales data set into a data frame object with the correct data types:
+
+```{r Load Data}
+sales_data <- as.data.frame(read_csv(file = "2011-2014 Sales Data.csv",
+                       col_types = "ccccfccffcccfcffcdidd"))
+```
+
+`read_csv` did not identify the date data type. Manually convert order date and ship date from character to date data type :
+
+```{r Convert Date}
+sales_data$`Order Date` <- as.Date(sales_data$`Order Date`, format = "%d-%m-%Y")
+sales_data$`Ship Date` <- as.Date(sales_data$`Ship Date`, format = "%d-%m-%Y")
+```
+
+<BR>
+
+### Initial Examination of Data
+
+View the first few lines of the data frame:
+
+```{r Head}
+gt(head(sales_data))
+```
+
+The appears to have loaded into the data frame correctly.
+
+View the column names, column data types, and the first few values in each column:
+
+```{r Glimpse}
+glimpse(sales_data)
+```
+
+There are 21 variables and 9, 994 observations in the data set. The column names and data types match the example values contained in the columns.
+
+View summary data of non-string columns:
+
+```{r Summary}
+sales_data %>%
+  select_if(~!is.character(.)) %>%
+  summary()
+```
+
+Examining summaries of the non-character columns reveals some initial insights:
+
+-   Order Date: Order dates are between January 2011 and December 2014, giving the date range of the data set (4 years).
+
+-   Ship Mode: Standard shipping is the most commonly selected option, with slower (and presumably more expensive) options occurring in decreasing order.
+
+-   Segment: More than half of the sales are in the consumer market segment.
+
+-   Country and Region: All of the sales are in the United States, with the Southern region being least common.
+
+-   Category: More than half of the sales are in the 'office supplies' product category.
+
+-   Sales: The sale value has a huge range from 44 cents to over twenty thousand dollars. The mean value is much larger than the median, indicating that there are likely some very high value outliers.
+
+-   Quantity: The quantity of items in a sale ranges from 1 to 14.
+
+-   Discount: Discounts range from 0% to 80% off, with most discounts being 20% or less.
+
+-   Profit: Sales range from losses of thousands of dollars to profits of thousands of dollars. Additionally, average profits per sale seems low compared to the sales values (low profit margins). **This indicates an important area for analysis- it appears that many sales fail to generate any profit or cost the company money.**
+
+<BR>
+
+### Data Cleaning
+
+Drop columns that are unnecessary for the analysis:
+
+```{r Drop Columns}
+sales_data <- select(sales_data, !c(`Row ID`, `Customer Name`, `Country`))
+```
+
+Remove duplicate rows:
+
+```{r Remove Duplicates}
+sales_data <- distinct(sales_data)
+```
+
+Check for missing values:
+
+```{r Check NA}
+sales_data %>%
+  summarise(count = sum(is.na(.)))
+```
+
+Fix character encoding in product names:
+
+```{r Fix Char}
+sales_data$`Product Name` <- str_replace_all(sales_data$`Product Name`, "�", " ")
+```
+
+Convert column names to snake_case:
+
+```{r Col Case}
+sales_data <- rename_with(sales_data, ~ tolower(gsub(" ", "_", .x, fixed = TRUE)))
+sales_data <- rename(sales_data, sub_category="sub-category")
+```
+
+Clarify sales, discount, and profit column names:
+
+```{r Col Names}
+sales_data <- rename(sales_data, all_of(c(total_sale = "sales", 
+                                          total_profit = "profit",
+                                          percent_discount = "discount")))
+```
+
+The data is now tidy.
+
+View the top rows of the dataframe after cleaning:
+
+```{r Review Head}
+gt(head(sales_data))
+```
+
+<BR>
+
+### Data Preprocessing
+
+Some additional variables would be helpful to conduct the analysis of the sales data.
+
+Add calculated column for retail price of each item:
+
+```{r Add Retail Price}
+sales_data <- mutate(sales_data, 
+                     retail_price=((total_sale / quantity) / (1 - percent_discount)))
+```
+
+Add calculated column for profit of each item:
+
+```{r Add Item Profit}
+sales_data <- mutate(sales_data, profit_per_item = total_profit / quantity)
+```
+
+Data preparation is now complete. The data has been imported, examined, and cleaned and is now ready for analysis.
+
+<BR>
+
+## Data Analysis
+
+### Overview of Sales Trends and Performance
+
+Start with an analysis of overall company sales trends and performance from 2011 to 2014. Graph monthly orders, revenue, and profit for the three year period, including trend lines:
+
+```{r Summary Bar Graphs}
+# keep only one row for each order, use floor_date function to condense full dates to months
+orders_by_month <- sales_data %>%
+  distinct(order_id, .keep_all = TRUE) %>%
+  group_by(month = lubridate::floor_date(order_date, "month")) %>%
+  summarise(orders = n())
+
+ggplot(orders_by_month) +
+  geom_col(mapping = aes(x = month, y = orders, fill = orders),
+           show.legend = FALSE) +
+  geom_smooth(mapping = aes(x = month, y = orders), 
+              se = FALSE) +
+  scale_fill_viridis(option = "E") +
+  labs(title = "Monthly Orders for 2011 - 2014 ",
+       x = "Month",
+       y = "Orders")
+
+# use floor_date function to condense full dates to months
+revenue_by_month <- sales_data %>%
+  group_by(month = lubridate::floor_date(order_date, "month")) %>%
+  summarise(total_sales = sum(total_sale))
+
+ggplot(revenue_by_month) +
+  geom_col(mapping = aes(x = month, y = total_sales, fill = total_sales),
+           show.legend = FALSE) +
+  geom_smooth(mapping = aes(x = month, y = total_sales), 
+              se = FALSE) +
+  scale_fill_viridis(option = "E") +
+  labs(title = "Monthly Revenue for 2011 - 2014 ",
+       x = "Month",
+       y = "Total Monthly Revenue ($)")
+
+# use floor_date function to condense full dates to months
+profit_by_month <- sales_data %>%
+  group_by(month = lubridate::floor_date(order_date, "month")) %>%
+  summarise(total_profit = sum(total_profit))
+
+ggplot(profit_by_month) +
+  geom_col(mapping = aes(x = month, y = total_profit, fill = total_profit),
+           show.legend = FALSE) +
+  geom_smooth(mapping = aes(x = month, y = total_profit), 
+              se = FALSE) +
+  scale_fill_viridis(option = "E") +
+  labs(title = "Monthly Profit for 2011 - 2014 ",
+       x = "Month",
+       y = "Total Monthly Profit ($)")
+```
+
+These three graphs reveal some insights:
+
+-   September, November, and December are the busiest months for sales, whereas January and February are the slowest. This is likely a typical retail pattern of increased orders for the holiday season and a lull following.
+
+-   Both orders and revenue have been increasing over time, including an accelerating increase in 2014. This could be mistakenly interpreted as strong company growth.
+
+-   Profits are increasing at a much slower rate than orders and revenue, including one month of negative profit in January 2012. **This slow increase of profits with an accelerating rate of orders and revenue indicates an issue with profit margins.**
+
+<BR>
+
+### Investigate Profit Further
+
+Graph profit per order over time:
+
+```{r Profit per Order}
+sales_data %>%
+  group_by(order_id, order_date) %>%
+  summarise(profit = sum(total_profit)) %>%
+  filter(between(profit, -1000, 1000)) %>%
+  ggplot() +
+  geom_point(mapping = aes(x = order_date, 
+                           y = profit, 
+                           color = profit), 
+             show.legend = FALSE) +
+  geom_smooth(mapping = aes(x = order_date, 
+                            y = profit), 
+              color = "black",
+              alpha = 0.5) +
+  scale_color_viridis(option = "C") +
+  labs(title = "Order Profits 2011 - 2014",
+       subtitle = "Outliers of profit above 1000 or below -1000 excluded",
+       x = "Order Date",
+       y = "Order Profit ($)")
+```
+
+**This graph confirms that there is an ongoing issue with profit margins and profitability of orders.** There are nearly as many orders that result in a net loss as there are that generate profit. The trend line shows that profit per order is unchanging over time, and confirms the earlier suspicion that overall profits are low.
+
+Calculate overall company profit margin:
+
+```{r Overall Profit Margin}
+company_profit_margin = (sum(sales_data$total_profit) / sum(sales_data$total_sale)) * 100
+company_profit_margin = round(company_profit_margin, 1)
+cat(company_profit_margin, "%")
+```
+
+**An overall profit margin of 12.5% *is* sustainable but it still seems that net-loss sales are significantly impacting profits.**
+
+Now, determine if there are significant differences in profitability by region, by market segment, or by product category. Graph the proportion of overall profits broken down by each of these factors:
+
+```{r Graph by Region + Segment + Category}
+profit_by_region <- sales_data %>%
+  group_by(year = lubridate::floor_date(order_date, "year"), region) %>%
+  summarise(total_profit = sum(total_profit))
+
+ggplot(profit_by_region) +
+  geom_bar(mapping = aes(x = year, 
+                         y = total_profit, 
+                         fill=region),
+           position = "fill",
+           stat = "identity") +
+  scale_fill_viridis(name = "Region", option = "E", discrete = TRUE) +
+  labs(title = "Annual Profit by Region",
+       x = "Year",
+       y = "Proportion of Annual Profits")
+
+profit_by_segment <- sales_data %>%
+  group_by(year = lubridate::floor_date(order_date, "year"), segment) %>%
+  summarise(total_profit = sum(total_profit))
+
+ggplot(profit_by_segment) +
+  geom_bar(mapping = aes(x = year, 
+                         y = total_profit, 
+                         fill=segment),
+           position = "fill",
+           stat = "identity") +
+  scale_fill_viridis(name = "Market Segment", option = "E", discrete = TRUE) +
+  labs(title = "Annual Profit by Market Segment",
+       x = "Year",
+       y = "Proportion of Annual Profits")
+
+profit_by_category <- sales_data %>%
+  group_by(year = lubridate::floor_date(order_date, "year"), category) %>%
+  summarise(total_profit = sum(total_profit))
+
+ggplot(profit_by_category) +
+  geom_bar(mapping = aes(x = year, 
+                         y = total_profit, 
+                         fill=category),
+           position = "fill",
+           stat = "identity") +
+  scale_fill_viridis(name = "Product Category", option = "E", discrete = TRUE) +
+  labs(title = "Annual Profit by Product Category",
+       x = "Product Category",
+       y = "Proportion of Annual Profits")
+```
+
+Reproduce summary information of region, segment, and category for context:
+
+```{r Summary Region + Segment + Category}
+sales_data %>%
+  select(region, segment, category) %>%
+  summary()
+```
+
+Based on this context the **Central region** and the **Furniture category** appear to have low profit margins and are worth looking at closer:
+
+```{r Central Profits}
+# calculate average profit for the central region, by state
+sales_data %>%
+  filter(region=="Central") %>%
+  group_by(state) %>%
+  summarise(total_profit = sum(total_profit)) %>%
+  ggplot() +
+  geom_col(mapping = aes(y = reorder(state, total_profit), 
+                         x = total_profit,
+                         fill = total_profit),
+           show.legend = FALSE) +
+  scale_fill_viridis(name = "State", 
+                     option = "E") +
+  labs(title = "Central Region Profits (2011-2014)",
+       x = "Total Profit ($)",
+       y = "State")
+```
+
+A closer look at the poorly performing Central region shows that the States of Texas and Illinois have an overall negative profit, which is severely impacting the regions overall profitability. Five additional states (Nebraska, Iowa, Kansas, South Dakota, and North Dakota) also have negligible profits, and are not adding significant value to sales in the region. The regional sales manager for the Central region should review these findings and consider how best to address these issues.
+
+```{r Furniture Profits}
+# calculate average profit for the furniture category, by category
+sales_data %>%
+  filter(category=="Furniture") %>%
+  group_by(sub_category) %>%
+  summarise(total_profit = sum(total_profit)) %>%
+  ggplot() +
+  geom_col(mapping = aes(y = total_profit, 
+                         x = reorder(sub_category, total_profit),
+                         fill = total_profit),
+           show.legend = FALSE) +
+  scale_fill_viridis(name = "Sub-Category", 
+                     option = "E") +
+  labs(title = "Furniture Profits (2011-2014)",
+       x = "Total Profit ($)",
+       y = "Furniture Sub-Category")
+```
+
+The profitability of furniture sales is being severely impacted by the sales of tables (and to a lesser extent, bookcases). The costs of shipping large pieces of furniture like tables and bookcases may be outweighing the potential profits in selling these items. A closer look into the costs associated with sales in this product sub-category should be performed.
+
+<BR>
+
+### Top Performers
+
+Next, a look into the most profitable customers and products to see if there are identifiable traits with these groups.
+
+<BR>
+
+#### Most Profitable Customers
+
+Display summary information of top customers (more than 2 standard deviations above mean total profit) and, for comparison purposes, summary information for all customers.
+
+```{r Top Customers}
+# create data frame of customers
+customers <- sales_data %>%
+  group_by(customer_id) %>%
+  summarize(num_orders = n_distinct(order_id),
+            avg_spend_per_order = round((sum(total_sale) / n_distinct(order_id)), 2),
+            avg_discount = round(mean(percent_discount), 3),
+            avg_profit_per_order = round((sum(total_profit) / n_distinct(order_id)), 2),
+            total_spend = round(sum(total_sale), 2),
+            total_profit = round(sum(total_profit), 2),
+            profit_margin = round((total_profit / total_spend), 2)) %>%
+  arrange(desc(total_profit), .by_group = TRUE)
+
+# create data frame of top customers
+top_customers <- customers %>%
+  filter(total_profit > (mean(total_profit) + sd(total_profit)*2))
+
+# display summary information of customers
+customers %>%
+  summarize(`Average Number of Orders` = round(mean(num_orders)),
+            `Average Spent Per Order` = round(mean(avg_spend_per_order), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Order` = round(mean(avg_profit_per_order), 2),
+            `Average Total Spent` = round(mean(total_spend), 2),
+            `Average Total Profit` = round(mean(total_profit), 2),
+            `Average Profit Margin` = round(mean(profit_margin), 2)) %>%
+  gt() %>%
+  tab_header(title = "Overall Customer Statistics")
+
+# display summary information of top customers
+ top_customers %>%
+  summarize(`Average Number of Orders` = round(mean(num_orders)),
+            `Average Spent Per Order` = round(mean(avg_spend_per_order), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Order` = round(mean(avg_profit_per_order), 2),
+            `Average Total Spent` = round(mean(total_spend), 2),
+            `Average Total Profit` = round(mean(total_profit), 2),
+            `Average Profit Margin` = round(mean(profit_margin), 2)) %>%
+  gt() %>%
+  tab_header(title = "Most Profitable Customer Statistics")
+```
+
+In comparing the top customers to the average customer some insights become apparent:
+
+-   Top customers do not have a significantly higher number of orders
+
+-   Top customers have both higher total spending as well as a higher profit margin
+
+-   Top customers have *lower* discounts than the average customer - **this indicates that discounts or sales may be undermining profitability**
+
+<BR>
+
+#### Most Profitable Products
+
+Display summary information of top products (more than 2 standard deviations above mean total profit) and, for comparison purposes, summary information for all products.
+
+```{r Top Products}
+# create data frame of products
+products <- sales_data %>%
+  group_by(product_id, product_name, category, sub_category) %>%
+  summarize(retail_price = mean(retail_price),
+            total_sold = sum(quantity),
+            total_spent = round(sum(total_sale), 2),
+            avg_discount = round(mean(percent_discount), 3),
+            avg_profit_per_item = round(mean(profit_per_item), 2),
+            total_profit = round(sum(total_profit), 2)) %>%
+  arrange(desc(total_profit), .by_group = TRUE)
+
+# create data frame of top products
+top_products <- products %>%
+  ungroup() %>%
+  filter(total_profit > (mean(total_profit) + sd(total_profit)*2)) 
+
+# display summary information about all products
+products %>%
+  ungroup() %>%
+  summarize(`Average Retail Price` = round(mean(retail_price), 2),
+            `Average Units Sold` = round(mean(total_sold)),
+            `Average Sale Price` = round(sum(total_spent) / sum(total_sold), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Product` = round(sum(total_profit) / sum(total_sold), 2),
+            `Average Profit Margin` = round(sum(total_profit) / sum(total_spent), 2)) %>%
+  gt() %>%
+  tab_header(title = "Overall Product Statistics")
+
+# display summary information about top products
+top_products %>%
+  summarize(`Average Retail Price` = round(mean(retail_price), 2),
+            `Average Units Sold` = round(mean(total_sold)),
+            `Average Sale Price` = round(sum(total_spent) / sum(total_sold), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Product` = round(sum(total_profit) / sum(total_sold), 2),
+            `Average Profit Margin` = round(sum(total_profit) / sum(total_spent), 2)) %>%
+  gt() %>%
+  tab_header(title = "Most Profitable Product Statistics")
+```
+
+Comparing top products to overall products leads to similar results as the same comparison with customers:
+
+-   The number of items sold is similar between top products and all products
+
+-   Top products are more expensive to purchase and have higher profit margins
+
+-   Top products are less discounted than the average product - **again indicating that higher sales and discounts may be counterproductive**
+
+<BR>
+
+### Problem Areas
+
+Next, a look into the least profitable customers and products to see if there are identifiable traits of these groups
+
+<BR>
+
+#### Least Profitable Customers
+
+Display summary information about bottom customers (more than 2 standard deviations below mean total profit) and, for comparison purposes, summary information for all customers.
+
+```{r Bottom Customers}
+# display summary data of customers
+customers %>%
+  summarize(`Average Number of Orders` = round(mean(num_orders)),
+            `Average Spent Per Order` = round(mean(avg_spend_per_order), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Order` = round(mean(avg_profit_per_order), 2),
+            `Average Total Spent` = round(mean(total_spend), 2),
+            `Average Total Profit` = round(mean(total_profit), 2),
+            `Average Profit Margin` = round(mean(profit_margin), 2)) %>%
+  gt() %>%
+  tab_header(title = "Overall Customer Statistics (Repeat)")
+
+# create data frame of bottom customers
+bottom_customers <- customers %>%
+  filter(total_profit < (mean(total_profit) - sd(total_profit)*2))
+
+# display summary data of bottom customers
+bottom_customers %>%
+  summarize(`Average Number of Orders` = round(mean(num_orders)),
+            `Average Spent Per Order` = round(mean(avg_spend_per_order), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Order` = round(mean(avg_profit_per_order), 2),
+            `Average Total Spent` = round(mean(total_spend), 2),
+            `Average Total Profit` = round(mean(total_profit), 2),
+            `Average Profit Margin` = round(mean(profit_margin), 2)) %>%
+  gt() %>%
+  tab_header(title = "Least Profitable Customer Statistics")
+```
+
+Looking at the bottom customers confirms issues of profitability:
+
+-   Bottom customers do not have a significantly higher number of orders
+
+-   Bottom customers have a higher total spending than the average customer but with an average negative profit margin on their orders
+
+-   Bottom customers have *higher* discounts than the average customer - this further confirms that discounts or sales may be hurting profitability
+
+<BR>
+
+#### Least Profitable Products
+
+```{r Bottom Products}
+bottom_products <- products %>%
+  ungroup() %>%
+  filter(total_profit < (mean(total_profit) - sd(total_profit)*1.5)) 
+
+products %>%
+  ungroup() %>%
+  summarize(`Average Retail Price` = round(mean(retail_price), 2),
+            `Average Units Sold` = round(mean(total_sold)),
+            `Average Sale Price` = round(sum(total_spent) / sum(total_sold), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Product` = round(sum(total_profit) / sum(total_sold), 2),
+            `Average Profit Margin` = round(sum(total_profit) / sum(total_spent), 2)) %>%
+  gt() %>%
+  tab_header(title = "Overall Product Statistics")
+
+bottom_products %>%
+  summarize(`Average Retail Price` = round(mean(retail_price), 2),
+            `Average Units Sold` = round(mean(total_sold)),
+            `Average Sale Price` = round(sum(total_spent) / sum(total_sold), 2),
+            `Average Product Discount` = round(mean(avg_discount), 3),
+            `Average Profit Per Product` = round(sum(total_profit) / sum(total_sold), 2),
+            `Average Profit Margin` = round(sum(total_profit) / sum(total_spent), 2)) %>%
+  gt() %>%
+  tab_header(title = "Least Profitable Product Statistics")
+```
+
+Comparing statistics about the least profitable products to the average, there is further evidence of problematic discounts:
+
+-   Units sold are not significantly different for bottom products
+
+-   Least profitable products have a significantly higher retail price than the average
+
+-   The least profitable products have an average discount of 39%.This leads to an average profit margin of **-25%**
+
+<BR>
+
+### Discounts and Profitability
+
+The examination of the most and least profitable products and customers showed a consistent relationship between percentage discount and total profit.
+
+To examine the effect of discounts on profits graph average discount for products compared to profit:
+
+```{r Discounts and Profits}
+products %>%
+  filter(between(avg_profit_per_item, -100, 100)) %>%
+  ggplot() +
+  geom_point(mapping = aes(x = avg_discount, 
+                           y = avg_profit_per_item, 
+                           color = category,
+                           shape = category),
+             alpha = 0.15,
+             show.legend = FALSE) +
+  scale_color_viridis(name = "Product Category", 
+                        discrete = TRUE) +
+  geom_smooth(mapping = aes(x = avg_discount, 
+                           y = avg_profit_per_item,
+                           color = category),
+              se = FALSE,
+              linewidth = 1.25,
+              alpha = 0.9) +
+  labs(title = "Average Discount versus Average Profit",
+       subtitle = "For clarity the graph excludes visualizing outliers",
+       x = "Average Product Discount",
+       y = "Avg Profit per Unit ($)")
+
+products %>%
+  filter(between(total_profit, -1000, 2000)) %>%
+  ggplot() +
+  geom_point(mapping = aes(x = avg_discount, 
+                           y = total_profit, 
+                           color = category,
+                           shape = category),
+             alpha = 0.15,
+             show.legend = FALSE) +
+  scale_color_viridis(name = "Product Category", 
+                        discrete = TRUE) +
+  geom_smooth(mapping = aes(x = avg_discount, 
+                           y = total_profit,
+                           color = category),
+              se = FALSE,
+              linewidth = 1.25,
+              alpha = 0.9) +
+  labs(title = "Average Discount versus Total Profit",
+       subtitle = "For clarity the graph excludes visualizing outliers",
+       x = "Average Product Discount",
+       y = "Total Profit for Product ($)")
+
+
+```
+
+**There is a negative correlation between the average product discount and the profit of a product.** This is most pronounced for the furniture and technology product categories. There is a curve upward at higher product discounts for the furniture category, but this is most likely an error due to the low number of data points for highly discounted furniture items.
+
+It is clear that discounts are being offered for many products at amounts that are too high and are negatively impacting business profit margins and overall profits. To determine what discounts are most effective graph the distribution of profits by average discount:
+
+```{r Discount Bins and Profits}
+sales_data %>%
+  ggplot() +
+  geom_violin(mapping = aes(x = as.factor(round(percent_discount, 1)), 
+                           y = profit_per_item,
+                           color = as.factor(round(percent_discount, 1))),
+              linewidth = 1,
+              show.legend = FALSE)+
+  scale_color_viridis(name = "Product Category", 
+                        option = "E", 
+                        discrete = TRUE) +
+  labs(title = "Average Discount versus Average Profit",
+       x = "Average Product Discount",
+       y = "Avg Profit per Unit ($)")
+
+sales_data %>%
+  ggplot() +
+  geom_violin(mapping = aes(x = as.factor(round(percent_discount, 1)), 
+                           y = total_profit,
+                           color = as.factor(round(percent_discount, 1))),
+              linewidth = 1,
+              show.legend = FALSE) +
+  scale_color_viridis(name = "Product Category", 
+                        option = "E", 
+                        discrete = TRUE) +
+  labs(title = "Average Discount versus Total Profit",
+       x = "Average Product Discount",
+       y = "Total Profit for Product ($)")
+
+
+```
+
+Discounts above 20% are severely impacting profits and **the** **highest total profits and profit margins occur when products are sold at full retail price**. This suggests that products are already priced competitively at retail prices and, in general, should not be discounted.
+
+<BR>
+
+## Conclusion
+
+### Summary of Findings
+
+General metrics (like sales and revenue growth) might make it appear that this e-commerce business is thriving. However, after thorough analysis, it is apparent that they have a large issue with profitability. Overall profit margins are low (12.5%) and many sales are only break-even or net-loss. Furthermore, profitability has not improved over the past 4 years (2011 - 2014).
+
+Profitability problems do not seem isolated to particular market segments, product categories, or sales regions. Furthermore, there does not seem to be any specific attributes of customers or orders that are drivers of profitability. Instead, the dominant factor negatively impacting profitability is the size of discount being offered.
+
+### Recommendations
+
+As a result of this analysis the following are recommended:
+
+1.  **Greatly reduce the frequency and size of discounts to increase profit margins**. A preliminary analysis shows that total profits are greatest when discounts are at or close to 0%. A regression analysis of total profit and product discounts may be helpful to determine most effective discount amounts.
+
+2.  **Further investigate if any specific areas would benefit from discounts.** The most profitable customers and products are getting lower discount rates than the average. Already strong profit margins for these customers and products may make increased numbers of sales via small discounts worthwhile.
+
+3.  **Consider re-evaluating pricing for all products**. Maximum profits appear to occur near 0% discounts. Increasing retail sale prices may further boost profits.
+
+4.  **Look deeper into the least profitable areas.** Some states (like Texas and Illinois) and some product categories (Furniture - Tables) have been identified as having an overall net-loss. Identifying root-cause of these losses or even eliminating these areas of business operations may be warranted.
+
+<BR>
+
+## Appendix
+
+Data used under the Database Contents License (DbCL). Data was retrieved from <https://www.kaggle.com/datasets/ishanshrivastava28/superstore-sales/data> on December 23, 2023.
+
+This document and accompanying code are copyrighted to Dee Weinacht under the GNU GPL v3.0 license.
