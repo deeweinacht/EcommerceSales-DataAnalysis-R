@@ -34,7 +34,7 @@ This e-commerce retailer has been experiencing continuous growth over the past 4
 
 This document walks through the entire process of the analysis. First the data is loaded and examined then data cleaning and pre-processing is completed. Then the cleaned data is analyzed using statistical and visual approaches. Finally the insights gained are summarized and recommendations are provided.
 
-The document may be navigates using the table of contents on the left.
+The document may be navigated using the table of contents on the left.
 
 To improve clarity and focus on the analysis code snippets are hidden by default, but can be viewed using the "Show" buttons to the right.
 
@@ -86,7 +86,7 @@ View the first few lines of the data frame:
 gt(head(sales_data))
 ```
 
-The appears to have loaded into the data frame correctly.
+The data has loaded into the data frame correctly.
 
 View the column names, column data types, and the first few values in each column:
 
