@@ -23,11 +23,14 @@ A data analysis case study using R and the Tidyverse. It uses a dataset sourced 
 This project includes several files:
 
 - *e-Commerce-Sales-Analysis.html*
-    - This html file contains the knit output of the R Markdown file in a portable and easily viewable format.
+    - This html file contains the knit output of the R Markdown file.
       - This document walks through the entire process of the analysis.
       - First the data is loaded and examined then data cleaning and pre-processing is completed.
       - Then the cleaned data is analyzed using statistical and visual approaches.
       - Finally the insights gained are summarized and recommendations are provided.
+    - An additional browswer-viewable version *index.html* is located in the docs folder.
+      - [It can be directly accessed here](https://deeweinacht.github.io/EcommerceSales-DataAnalysis-R/).
+    
 To improve clarity and focus on the analysis code snippets are hidden by default, but can be viewed using the "Show" buttons to the right. 
 - *e-Commerce Sales Analysis.Rproj*
     - The R Studio project file
@@ -38,7 +41,9 @@ To improve clarity and focus on the analysis code snippets are hidden by default
 
 **User's Guide**
 
-The html file may be opened and viewed using any web browser. The document may be navigated using the table of contents on the left of the page. For best results use a desktop browser.
+The html file [here](https://deeweinacht.github.io/EcommerceSales-DataAnalysis-R/) may be opened and viewed using any web browser. The document may be navigated using the table of contents on the left of the page. For best results use a desktop browser.
+
+Alternatively, the markdown file can be viewed in RStudio or another R-compatible code editor of your choice.
 
 **Attribution**
 
